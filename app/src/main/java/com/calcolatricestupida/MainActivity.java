@@ -11,6 +11,7 @@ import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,12 +33,8 @@ import java.util.Random;
  *
  * Ogni tanto il risultato viene sostituito da roba random tipo "AURA +1000" o "SIGMA".
  *
- * Modalità segreta: premi C ± C ± , poi la password, e si apre la finestra dei comandi:
- *   aggiungi 3 3 = frase      (frase per il calcolo 3 con 3)
- *   aggiungi 69 = frase       (frase ogni volta che 69 è un operando)
- *   elimina 3 3               elimina 69
- *   lista
- *   esci
+ * Modalità segreta: premi C ± C ±, inserisci la password e si apre la finestra dei comandi.
+ * Scrivi "aiuto" per l'elenco completo.
  */
 public class MainActivity extends Activity {
 
@@ -49,10 +46,24 @@ public class MainActivity extends Activity {
 
     private static final int MAX_DIGITS = 14;
     private static final double MEME_CHANCE = 0.35;
+    private static final int MAX_PHRASE_LENGTH = 60;
 
     private static final String SECRET_PASSWORD = "aura67";
     private static final String PREFS = "calcolatrice_custom";
     private static final String PREFS_KEY = "entries";
+
+    private static final String HELP_TEXT =
+            "COMANDI:\n"
+            + "aiuto: mostra questo elenco\n"
+            + "aggiungi 7 = frase: la frase compare quando c'è il 7\n"
+            + "aggiungi 4 9 = frase: la frase compare solo con 4 e 9 (in qualsiasi ordine)\n"
+            + "  Se la voce esiste già, viene sostituita.\n"
+            + "elimina 7 oppure elimina 4 9: cancella la voce\n"
+            + "lista: mostra tutte le frasi\n"
+            + "aura 100: imposta il contatore AURA a 100\n"
+            + "azzera: cancella tutte le frasi (poi scrivi: azzera si)\n"
+            + "esci: chiude la finestra\n"
+            + "\nLe frasi per 2+2, 3+3 e 69 sono fisse e non si cambiano con i comandi.";
 
     private static final String[] MEMES = {
             "AURA", "AURA +1000", "AURA -67", "67", "6 7", "SIGMA", "RIZZ",
@@ -81,7 +92,7 @@ public class MainActivity extends Activity {
 
     private final Random rnd = new Random();
     private final List<String> recentKeys = new ArrayList<>();
-    // Ogni voce: {operando1, operando2 (vuoto se singolo), frase}
+    // Ogni voce: {numero1, numero2 (vuoto se singolo), frase}
     private final List<String[]> customEntries = new ArrayList<>();
 
     private TextView auraView;
@@ -218,76 +229,162 @@ public class MainActivity extends Activity {
     }
 
     private void openCommands() {
+        final StringBuilder log = new StringBuilder("Scrivi \"aiuto\" per vedere i comandi.");
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), 0);
+
+        final TextView out = new TextView(this);
+        out.setTextSize(14);
+        out.setTextColor(Color.BLACK);
+        out.setText(log.toString());
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(out);
+        box.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(260)));
+
         final EditText input = new EditText(this);
-        input.setHint("aggiungi 3 3 = frase | elimina 3 3 | lista | esci");
-        new AlertDialog.Builder(this)
-                .setTitle("Comandi")
-                .setView(input)
-                .setPositiveButton("Invia", (d, w) -> {
-                    runCommand(input.getText().toString().trim());
-                    if (input.getText().toString().trim().toLowerCase(Locale.ROOT).equals("esci") == false) {
-                        openCommands();
-                    }
-                })
+        input.setSingleLine(true);
+        input.setHint("es. aggiungi 3 3 = ciao");
+        box.addView(input, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Comandi segreti")
+                .setView(box)
+                .setPositiveButton("Invia", null)
                 .setNegativeButton("Chiudi", null)
-                .show();
+                .create();
+        dialog.show();
+
+        // Il pulsante Invia non chiude la finestra: la chiude solo "esci" o "Chiudi".
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String cmd = input.getText().toString().trim();
+            if (cmd.isEmpty()) return;
+            if (cmd.equalsIgnoreCase("esci")) {
+                dialog.dismiss();
+                return;
+            }
+            String result = runCommand(cmd);
+            log.append("\n\n> ").append(cmd).append("\n").append(result);
+            out.setText(log.toString());
+            input.setText("");
+        });
     }
 
-    private void runCommand(String cmd) {
+    /** Esegue un comando e restituisce il testo di risposta da mostrare nella finestra. */
+    private String runCommand(String cmd) {
         String lower = cmd.toLowerCase(Locale.ROOT);
 
+        if (lower.equals("aiuto") || lower.equals("help")) {
+            return HELP_TEXT;
+        }
+
         if (lower.startsWith("aggiungi ")) {
-            String rest = cmd.substring(9);
-            int eq = rest.indexOf('=');
-            if (eq < 0) {
-                toast("Formato: aggiungi 3 3 = frase");
-                return;
-            }
-            String[] nums = rest.substring(0, eq).trim().split("\\s+");
-            String phrase = rest.substring(eq + 1).trim();
-            if (nums.length < 1 || nums.length > 2 || phrase.isEmpty() || phrase.contains("\t")) {
-                toast("Formato non valido");
-                return;
-            }
-            String a = nums[0];
-            String b = nums.length == 2 ? nums[1] : "";
-            customEntries.add(new String[]{a, b, phrase});
-            saveCustom();
-            toast("Aggiunta: " + a + (b.isEmpty() ? "" : " " + b));
-        } else if (lower.startsWith("elimina ")) {
+            return addEntry(cmd.substring(9).trim());
+        }
+
+        if (lower.startsWith("elimina ")) {
             String[] nums = cmd.substring(8).trim().split("\\s+");
+            if (!validNumbers(nums)) return "Formato: elimina 7   oppure   elimina 4 9";
             String a = nums[0];
             String b = nums.length > 1 ? nums[1] : "";
             boolean removed = false;
             Iterator<String[]> it = customEntries.iterator();
             while (it.hasNext()) {
-                String[] e = it.next();
-                if (e[0].equals(a) && e[1].equals(b)) {
+                if (sameKey(it.next(), a, b)) {
                     it.remove();
                     removed = true;
                 }
             }
-            if (removed) {
-                saveCustom();
-                toast("Eliminata");
-            } else {
-                toast("Nessuna voce trovata");
-            }
-        } else if (lower.equals("lista")) {
-            if (customEntries.isEmpty()) {
-                toast("Nessuna frase personalizzata");
-            } else {
-                StringBuilder sb = new StringBuilder();
-                for (String[] e : customEntries) {
-                    sb.append(e[0]);
-                    if (!e[1].isEmpty()) sb.append(" ").append(e[1]);
-                    sb.append(" = ").append(e[2]).append("\n");
-                }
-                toast(sb.toString().trim());
-            }
-        } else if (!lower.equals("esci")) {
-            toast("Comando sconosciuto");
+            if (!removed) return "Nessuna voce trovata per " + keyLabel(a, b) + ".";
+            saveCustom();
+            return "Eliminata la voce " + keyLabel(a, b) + ".";
         }
+
+        if (lower.equals("lista")) {
+            if (customEntries.isEmpty()) return "Nessuna frase personalizzata.";
+            StringBuilder sb = new StringBuilder();
+            int n = 1;
+            for (String[] e : customEntries) {
+                sb.append(n++).append(". ").append(keyLabel(e[0], e[1]))
+                        .append(" = ").append(e[2]).append("\n");
+            }
+            return sb.toString().trim();
+        }
+
+        if (lower.startsWith("aura ")) {
+            String v = cmd.substring(5).trim();
+            if (!v.matches("-?\\d{1,6}")) return "Formato: aura 100   (un numero intero)";
+            aura = Integer.parseInt(v);
+            return "AURA impostata a " + aura + ".";
+        }
+
+        if (lower.equals("azzera")) {
+            return "Per cancellare tutte le frasi scrivi: azzera si";
+        }
+
+        if (lower.equals("azzera si")) {
+            int count = customEntries.size();
+            customEntries.clear();
+            saveCustom();
+            return "Cancellate " + count + " frasi.";
+        }
+
+        return "Comando sconosciuto. Scrivi \"aiuto\" per l'elenco.";
+    }
+
+    /** Gestisce "7 = frase" oppure "4 9 = frase" (il testo dopo "aggiungi"). */
+    private String addEntry(String rest) {
+        int eq = rest.indexOf('=');
+        if (eq < 0) return "Formato: aggiungi 7 = frase   oppure   aggiungi 4 9 = frase";
+
+        String[] nums = rest.substring(0, eq).trim().split("\\s+");
+        String phrase = rest.substring(eq + 1).trim();
+
+        if (nums.length < 1 || nums.length > 2 || !validNumbers(nums)) {
+            return "I numeri devono essere 1 o 2, per esempio: aggiungi 7 = frase";
+        }
+        if (phrase.isEmpty()) return "La frase è vuota.";
+        if (phrase.length() > MAX_PHRASE_LENGTH) {
+            return "La frase è troppo lunga (massimo " + MAX_PHRASE_LENGTH + " caratteri).";
+        }
+        if (phrase.contains("\t") || phrase.contains("\n")) return "La frase non può andare a capo.";
+
+        String a = nums[0];
+        String b = nums.length == 2 ? nums[1] : "";
+
+        // Se la voce esiste già la sostituisce.
+        Iterator<String[]> it = customEntries.iterator();
+        boolean replaced = false;
+        while (it.hasNext()) {
+            if (sameKey(it.next(), a, b)) {
+                it.remove();
+                replaced = true;
+            }
+        }
+        customEntries.add(new String[]{a, b, phrase});
+        saveCustom();
+        return (replaced ? "Sostituita" : "Salvata") + " la voce " + keyLabel(a, b) + ": \"" + phrase + "\"";
+    }
+
+    private static boolean validNumbers(String[] nums) {
+        for (String n : nums) {
+            if (!n.matches("-?\\d+(\\.\\d+)?")) return false;
+        }
+        return true;
+    }
+
+    private static boolean sameKey(String[] e, String a, String b) {
+        if (b.isEmpty()) return e[1].isEmpty() && e[0].equals(a);
+        if (e[1].isEmpty()) return false;
+        return (e[0].equals(a) && e[1].equals(b)) || (e[0].equals(b) && e[1].equals(a));
+    }
+
+    private static String keyLabel(String a, String b) {
+        return b.isEmpty() ? a : a + " e " + b;
     }
 
     private String customPhrase(String left, String right) {
