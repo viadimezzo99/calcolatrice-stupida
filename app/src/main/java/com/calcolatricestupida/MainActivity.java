@@ -1,16 +1,26 @@
 package com.calcolatricestupida;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 
 /**
@@ -21,6 +31,13 @@ import java.util.Random;
  *   "−" divide       "÷" sottrae
  *
  * Ogni tanto il risultato viene sostituito da roba random tipo "AURA +1000" o "SIGMA".
+ *
+ * Modalità segreta: premi C ± C ± , poi la password, e si apre la finestra dei comandi:
+ *   aggiungi 3 3 = frase      (frase per il calcolo 3 con 3)
+ *   aggiungi 69 = frase       (frase ogni volta che 69 è un operando)
+ *   elimina 3 3               elimina 69
+ *   lista
+ *   esci
  */
 public class MainActivity extends Activity {
 
@@ -32,6 +49,10 @@ public class MainActivity extends Activity {
 
     private static final int MAX_DIGITS = 14;
     private static final double MEME_CHANCE = 0.35;
+
+    private static final String SECRET_PASSWORD = "aura67";
+    private static final String PREFS = "calcolatrice_custom";
+    private static final String PREFS_KEY = "entries";
 
     private static final String[] MEMES = {
             "AURA", "AURA +1000", "AURA -67", "67", "6 7", "SIGMA", "RIZZ",
@@ -56,7 +77,12 @@ public class MainActivity extends Activity {
             {"0", ".", "="}
     };
 
+    private static final List<String> SECRET_SEQUENCE = Arrays.asList("C", "±", "C", "±");
+
     private final Random rnd = new Random();
+    private final List<String> recentKeys = new ArrayList<>();
+    // Ogni voce: {operando1, operando2 (vuoto se singolo), frase}
+    private final List<String[]> customEntries = new ArrayList<>();
 
     private TextView auraView;
     private TextView exprView;
@@ -73,6 +99,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        loadCustom();
         setContentView(buildUi());
         refresh();
     }
@@ -156,9 +183,148 @@ public class MainActivity extends Activity {
         return Math.round(v * getResources().getDisplayMetrics().density);
     }
 
+    private void toast(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+    }
+
+    // ---------- Modalità segreta ----------
+
+    private void checkSecretSequence(String key) {
+        recentKeys.add(key);
+        if (recentKeys.size() > SECRET_SEQUENCE.size()) {
+            recentKeys.remove(0);
+        }
+        if (recentKeys.equals(SECRET_SEQUENCE)) {
+            recentKeys.clear();
+            askPassword();
+        }
+    }
+
+    private void askPassword() {
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        new AlertDialog.Builder(this)
+                .setTitle("Modalità segreta")
+                .setView(input)
+                .setPositiveButton("OK", (d, w) -> {
+                    if (input.getText().toString().equals(SECRET_PASSWORD)) {
+                        openCommands();
+                    } else {
+                        toast("Password sbagliata");
+                    }
+                })
+                .setNegativeButton("Annulla", null)
+                .show();
+    }
+
+    private void openCommands() {
+        final EditText input = new EditText(this);
+        input.setHint("aggiungi 3 3 = frase | elimina 3 3 | lista | esci");
+        new AlertDialog.Builder(this)
+                .setTitle("Comandi")
+                .setView(input)
+                .setPositiveButton("Invia", (d, w) -> {
+                    runCommand(input.getText().toString().trim());
+                    if (input.getText().toString().trim().toLowerCase(Locale.ROOT).equals("esci") == false) {
+                        openCommands();
+                    }
+                })
+                .setNegativeButton("Chiudi", null)
+                .show();
+    }
+
+    private void runCommand(String cmd) {
+        String lower = cmd.toLowerCase(Locale.ROOT);
+
+        if (lower.startsWith("aggiungi ")) {
+            String rest = cmd.substring(9);
+            int eq = rest.indexOf('=');
+            if (eq < 0) {
+                toast("Formato: aggiungi 3 3 = frase");
+                return;
+            }
+            String[] nums = rest.substring(0, eq).trim().split("\\s+");
+            String phrase = rest.substring(eq + 1).trim();
+            if (nums.length < 1 || nums.length > 2 || phrase.isEmpty() || phrase.contains("\t")) {
+                toast("Formato non valido");
+                return;
+            }
+            String a = nums[0];
+            String b = nums.length == 2 ? nums[1] : "";
+            customEntries.add(new String[]{a, b, phrase});
+            saveCustom();
+            toast("Aggiunta: " + a + (b.isEmpty() ? "" : " " + b));
+        } else if (lower.startsWith("elimina ")) {
+            String[] nums = cmd.substring(8).trim().split("\\s+");
+            String a = nums[0];
+            String b = nums.length > 1 ? nums[1] : "";
+            boolean removed = false;
+            Iterator<String[]> it = customEntries.iterator();
+            while (it.hasNext()) {
+                String[] e = it.next();
+                if (e[0].equals(a) && e[1].equals(b)) {
+                    it.remove();
+                    removed = true;
+                }
+            }
+            if (removed) {
+                saveCustom();
+                toast("Eliminata");
+            } else {
+                toast("Nessuna voce trovata");
+            }
+        } else if (lower.equals("lista")) {
+            if (customEntries.isEmpty()) {
+                toast("Nessuna frase personalizzata");
+            } else {
+                StringBuilder sb = new StringBuilder();
+                for (String[] e : customEntries) {
+                    sb.append(e[0]);
+                    if (!e[1].isEmpty()) sb.append(" ").append(e[1]);
+                    sb.append(" = ").append(e[2]).append("\n");
+                }
+                toast(sb.toString().trim());
+            }
+        } else if (!lower.equals("esci")) {
+            toast("Comando sconosciuto");
+        }
+    }
+
+    private String customPhrase(String left, String right) {
+        for (String[] e : customEntries) {
+            boolean pair = !e[1].isEmpty()
+                    && ((e[0].equals(left) && e[1].equals(right))
+                    || (e[0].equals(right) && e[1].equals(left)));
+            boolean single = e[1].isEmpty() && (e[0].equals(left) || e[0].equals(right));
+            if (pair || single) return e[2];
+        }
+        return null;
+    }
+
+    private void loadCustom() {
+        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String raw = p.getString(PREFS_KEY, "");
+        customEntries.clear();
+        for (String line : raw.split("\n")) {
+            String[] parts = line.split("\t", 3);
+            if (parts.length == 3 && !parts[2].isEmpty()) {
+                customEntries.add(parts);
+            }
+        }
+    }
+
+    private void saveCustom() {
+        StringBuilder sb = new StringBuilder();
+        for (String[] e : customEntries) {
+            sb.append(e[0]).append('\t').append(e[1]).append('\t').append(e[2]).append('\n');
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREFS_KEY, sb.toString()).apply();
+    }
+
     // ---------- Logica ----------
 
     private void onKey(String key) {
+        checkSecretSequence(key);
         override = null;
         switch (key) {
             case "C":  clearAll(); break;
@@ -218,8 +384,9 @@ public class MainActivity extends Activity {
 
         double v = value();
         String left = fmt(acc);
+        String right = fmt(v);
         double r = apply(acc, fn, v);
-        exprView.setText(left + " " + opLabel + " " + fmt(v) + " =");
+        exprView.setText(left + " " + opLabel + " " + right + " =");
 
         if (Double.isNaN(r) || Double.isInfinite(r)) {
             showError();
@@ -233,11 +400,15 @@ public class MainActivity extends Activity {
         fresh = true;
 
         aura += rnd.nextInt(490) - 69; // range -69 .. +420
-        String right = fmt(v);
+
+        // Le frasi personalizzate hanno la precedenza su quelle fisse.
+        String custom = customPhrase(left, right);
         boolean twoPlusTwo = left.equals("2") && right.equals("2") && r == 4;
         boolean threePlusThree = left.equals("3") && right.equals("3");
         boolean sixtyNine = left.equals("69") || right.equals("69");
-        if (twoPlusTwo) {
+        if (custom != null) {
+            override = custom;
+        } else if (twoPlusTwo) {
             override = "3B aura Battle";
         } else if (threePlusThree) {
             override = "MO vuole fare il capo, MO!";
