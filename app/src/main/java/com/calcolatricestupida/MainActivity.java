@@ -233,7 +233,10 @@ public class MainActivity extends Activity {
         fresh = true;
 
         aura += rnd.nextInt(490) - 69; // range -69 .. +420
-        if (rnd.nextDouble() < MEME_CHANCE) {
+        boolean twoPlusTwo = left.equals("2") && fmt(v).equals("2") && r == 4;
+        if (twoPlusTwo) {
+            override = "3B aura Battle";
+        } else if (rnd.nextDouble() < MEME_CHANCE) {
             override = randomMeme();
         }
     }
