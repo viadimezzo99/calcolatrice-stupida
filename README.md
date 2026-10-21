@@ -13,9 +13,7 @@ Calcolatrice in stile Android base, ma con qualche idea sbagliata di proposito.
 
 L'ultima versione è sempre qui:
 
-https://github.com/OWNER/REPO/releases/latest/download/calcolatrice-stupida.apk
-
-Sostituisci `OWNER/REPO` con il nome della repo (vedi la pagina di GitHub).
+https://github.com/viadimezzo99/calcolatrice-stupida/releases/latest/download/calcolatrice-stupida.apk
 
 ## Build
 
