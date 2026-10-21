@@ -233,9 +233,16 @@ public class MainActivity extends Activity {
         fresh = true;
 
         aura += rnd.nextInt(490) - 69; // range -69 .. +420
-        boolean twoPlusTwo = left.equals("2") && fmt(v).equals("2") && r == 4;
+        String right = fmt(v);
+        boolean twoPlusTwo = left.equals("2") && right.equals("2") && r == 4;
+        boolean threePlusThree = left.equals("3") && right.equals("3");
+        boolean sixtyNine = left.equals("69") || right.equals("69");
         if (twoPlusTwo) {
             override = "3B aura Battle";
+        } else if (threePlusThree) {
+            override = "MO vuole fare il capo, MO!";
+        } else if (sixtyNine) {
+            override = "MONELLA, SEI UNA MONELLA!";
         } else if (rnd.nextDouble() < MEME_CHANCE) {
             override = randomMeme();
         }
@@ -321,8 +328,10 @@ public class MainActivity extends Activity {
 
     private void refresh() {
         String shown = override != null ? override : entry;
+        boolean longText = override != null && shown.length() > 12;
         displayView.setText(shown);
-        displayView.setTextSize(shown.length() > 12 ? 34 : shown.length() > 8 ? 50 : 72);
+        displayView.setSingleLine(!longText);
+        displayView.setTextSize(longText ? 26 : shown.length() > 12 ? 34 : shown.length() > 8 ? 50 : 72);
 
         String sign = aura >= 0 ? "+" : "";
         auraView.setText("AURA " + sign + aura);
